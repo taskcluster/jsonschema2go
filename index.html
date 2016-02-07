@@ -20,13 +20,13 @@
 
     <section class="main-content">
       <h1>
-<a id="jsonschema2go" class="anchor" href="#jsonschema2go" aria-hidden="true"><span class="octicon octicon-link"></span></a>jsonschema2go</h1>
+<a id="jsonschema2go" class="anchor" href="#jsonschema2go" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>jsonschema2go</h1>
 
 <p><a href="http://travis-ci.org/taskcluster/jsonschema2go"><img src="https://secure.travis-ci.org/taskcluster/jsonschema2go.png" alt="Build Status"></a>
 <a href="https://godoc.org/github.com/taskcluster/jsonschema2go"><img src="https://godoc.org/github.com/taskcluster/jsonschema2go?status.png" alt="GoDoc"></a></p>
 
 <h1>
-<a id="overview" class="anchor" href="#overview" aria-hidden="true"><span class="octicon octicon-link"></span></a>Overview</h1>
+<a id="overview" class="anchor" href="#overview" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Overview</h1>
 
 <p>Are you writing a service in go that needs to interpret json data, and you already have a json schema definition for the format of the json?</p>
 
@@ -41,17 +41,16 @@
 <p>This library auto-generates your go types for you.</p>
 
 <h1>
-<a id="real-world-example" class="anchor" href="#real-world-example" aria-hidden="true"><span class="octicon octicon-link"></span></a>Real-World Example</h1>
+<a id="real-world-example" class="anchor" href="#real-world-example" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Real-World Example</h1>
 
-<p>Here is a real-world example json schema taken from the taskcluster project. Try it out yourself if you like:</p>
+<p>Here is a real-world example json schema taken from the taskcluster project. Try it out yourself if you like.</p>
 
-<pre><code>$ echo 'http://schemas.taskcluster.net/queue/v1/create-task-request.json' | jsonschema2go -o example.go
-</code></pre>
+<p>First, let's see the schema:</p>
 
-<pre><code>{
-    "id": "http://schemas.taskcluster.net/queue/v1/create-task-request.json#",
+<pre><code>$ curl 'http://schemas.taskcluster.net/queue/v1/create-task-request.json' 2&gt;/dev/null
+{
     "$schema": "http://json-schema.org/draft-04/schema#",
-    "title": "Task Definition",
+    "title": "Task Definition Request",
     "description": "Definition of a task that can be scheduled\n",
     "type": "object",
     "properties": {
@@ -73,7 +72,7 @@
         },
         "schedulerId": {
             "title": "Scheduler Identifier",
-            "description": "Identifier for the scheduler that _defined_ this task, this can be an\nidentifier for a user or a service like the `\"task-graph-scheduler\"`.\nAlong with the `taskGroupId` this is used to form the permission scope\n`queue:assume:scheduler-id:&lt;schedulerId&gt;/&lt;taskGroupId&gt;`,\nthis scope is necessary to _schedule_ a defined task, or _rerun_ a task.\n",
+            "description": "Identifier for the scheduler that _defined_ this task, this can be an\nidentifier for a user or a service like the `\"task-graph-scheduler\"`.\n**Task submitter required scopes**\n`queue:assume:scheduler-id:&lt;schedulerId&gt;/&lt;taskGroupId&gt;`.\nThis scope is also necessary to _schedule_ a defined task, or _rerun_ a\ntask.\n",
             "type": "string",
             "minLength": 1,
             "maxLength": 22,
@@ -84,11 +83,11 @@
             "title": "Task-Group Identifier",
             "description": "Identifier for a group of tasks scheduled together with this task, by\nscheduler identified by `schedulerId`. For tasks scheduled by the\ntask-graph scheduler, this is the `taskGraphId`.  Defaults to `taskId` if\nproperty isn't specified.\n",
             "type": "string",
-            "pattern": "^[a-zA-Z0-9-_]{22}$"
+            "pattern": "^[A-Za-z0-9_-]{8}[Q-T][A-Za-z0-9_-][CGKOSWaeimquy26-][A-Za-z0-9_-]{10}[AQgw]$"
         },
         "routes": {
             "title": "Task Specific Routes",
-            "description": "List of task specific routes, AMQP messages will be CC'ed to these routes.\n",
+            "description": "List of task specific routes, AMQP messages will be CC'ed to these routes.\n**Task submitter required scopes** `queue:route:&lt;route&gt;` for\neach route given.\n",
             "type": "array",
             "default": [],
             "items": {
@@ -101,12 +100,22 @@
             "maxItems": 10,
             "uniqueItems": true
         },
+        "priority": {
+            "title": "Task Priority",
+            "description": "Priority of task, this defaults to `normal`. Additional levels may be\nadded later.\n**Task submitter required scopes** `queue:task-priority:high` for high\npriority tasks.\n",
+            "type": "string",
+            "enum": [
+                "high",
+                "normal"
+            ],
+            "default": "normal"
+        },
         "retries": {
             "title": "Retries",
             "description": "Number of times to retry the task in case of infrastructure issues.\nAn _infrastructure issue_ is a worker node that crashes or is shutdown,\nthese events are to be expected.\n",
             "type": "integer",
             "minimum": 0,
-            "maximum": 50,
+            "maximum": 49,
             "default": 5
         },
         "created": {
@@ -134,8 +143,9 @@
             "default": [],
             "items": {
                 "title": "Scope",
-                "description": "A scope (or scope-patterns) which the task is\nauthorized to use. This can be a string or a string\nending with `*` which will authorize all scopes for\nwhich the string is a prefix.\n",
-                "type": "string"
+                "description": "A scope (or scope-patterns) which the task is\nauthorized to use. This can be a string or a string\nending with `*` which will authorize all scopes for\nwhich the string is a prefix.  Scopes must be composed of\nprintable ASCII characters and spaces.\n**Task submitter required scopes** The same scope-pattern(s) given\n(otherwise a task could be submitted to perform an action that the\ntask submitter is not authorized to perform).\n",
+                "type": "string",
+                "pattern": "^[\\x20-\\x7e]*$"
             }
         },
         "payload": {
@@ -208,34 +218,47 @@
         "deadline",
         "payload",
         "metadata"
-    ]
+    ],
+    "id": "http://schemas.taskcluster.net/queue/v1/create-task-request.json#"
 }
 </code></pre>
 
-<p>Jsonschema2go generates this code for you, directly from the schema definition:</p>
+<p>And now we run jsonschema2go to generate the go type(s):</p>
 
-<div class="highlight highlight-go"><pre><span class="pl-c">// The following code is AUTO-GENERATED. Please DO NOT edit.</span>
+<div class="highlight highlight-source-go"><pre>$ echo <span class="pl-s"><span class="pl-pds">'</span>http://schemas.taskcluster.net/queue/v1/create-task-request.json<span class="pl-pds">'</span></span> | jsonschema2go -o main
+<span class="pl-c">// This source code file is AUTO-GENERATED by github.com/taskcluster/jsonschema2go</span>
 
-<span class="pl-k">package</span> queue
+<span class="pl-k">package</span> main
 
 <span class="pl-k">import</span> (
-    <span class="pl-s"><span class="pl-pds">"</span>time<span class="pl-pds">"</span></span>
+    <span class="pl-s"><span class="pl-pds">"</span>encoding/json<span class="pl-pds">"</span></span>
+    <span class="pl-s"><span class="pl-pds">"</span>github.com/taskcluster/taskcluster-client-go/tcclient<span class="pl-pds">"</span></span>
 )
 
 <span class="pl-k">type</span> (
     <span class="pl-c">// Definition of a task that can be scheduled</span>
     <span class="pl-c">//</span>
     <span class="pl-c">// See http://schemas.taskcluster.net/queue/v1/create-task-request.json#</span>
-    <span class="pl-v">TaskDefinition</span> <span class="pl-k">struct</span> {
+    <span class="pl-v">TaskDefinitionRequest</span> <span class="pl-k">struct</span> {
+
         <span class="pl-c">// Creation time of task</span>
-        <span class="pl-v">Created</span> time.<span class="pl-smi">Time</span> <span class="pl-s"><span class="pl-pds">`</span>json:"created"<span class="pl-pds">`</span></span>
+        <span class="pl-c">//</span>
+        <span class="pl-c">// See http://schemas.taskcluster.net/queue/v1/create-task-request.json#/properties/created</span>
+        <span class="pl-v">Created</span> tcclient.<span class="pl-smi">Time</span> <span class="pl-s"><span class="pl-pds">`</span>json:"created"<span class="pl-pds">`</span></span>
+
         <span class="pl-c">// Deadline of the task, `pending` and `running` runs are resolved as **failed** if not resolved by other means before the deadline. Note, deadline cannot be more than5 days into the future</span>
-        <span class="pl-v">Deadline</span> time.<span class="pl-smi">Time</span> <span class="pl-s"><span class="pl-pds">`</span>json:"deadline"<span class="pl-pds">`</span></span>
+        <span class="pl-c">//</span>
+        <span class="pl-c">// See http://schemas.taskcluster.net/queue/v1/create-task-request.json#/properties/deadline</span>
+        <span class="pl-v">Deadline</span> tcclient.<span class="pl-smi">Time</span> <span class="pl-s"><span class="pl-pds">`</span>json:"deadline"<span class="pl-pds">`</span></span>
+
         <span class="pl-c">// Task expiration, time at which task definition and status is deleted.</span>
         <span class="pl-c">// Notice that all artifacts for the must have an expiration that is no</span>
         <span class="pl-c">// later than this. If this property isn't it will be set to `deadline`</span>
         <span class="pl-c">// plus one year (this default may subject to change).</span>
-        <span class="pl-v">Expires</span> time.<span class="pl-smi">Time</span> <span class="pl-s"><span class="pl-pds">`</span>json:"expires"<span class="pl-pds">`</span></span>
+        <span class="pl-c">//</span>
+        <span class="pl-c">// See http://schemas.taskcluster.net/queue/v1/create-task-request.json#/properties/expires</span>
+        <span class="pl-v">Expires</span> tcclient.<span class="pl-smi">Time</span> <span class="pl-s"><span class="pl-pds">`</span>json:"expires"<span class="pl-pds">`</span></span>
+
         <span class="pl-c">// Object with properties that can hold any kind of extra data that should be</span>
         <span class="pl-c">// associated with the task. This can be data for the task which doesn't</span>
         <span class="pl-c">// fit into `payload`, or it can supplementary data for use in services</span>
@@ -245,78 +268,175 @@
         <span class="pl-c">// for treeherder reporting and task indexing don't conflict, hence, we have</span>
         <span class="pl-c">// reusable services. **Warning**, do not stuff large data-sets in here,</span>
         <span class="pl-c">// task definitions should not take-up multiple MiBs.</span>
-        <span class="pl-v">Extra</span> <span class="pl-k">interface</span>{} <span class="pl-s"><span class="pl-pds">`</span>json:"extra"<span class="pl-pds">`</span></span>
+        <span class="pl-c">//</span>
+        <span class="pl-c">// Default:    map[]</span>
+        <span class="pl-c">//</span>
+        <span class="pl-c">// See http://schemas.taskcluster.net/queue/v1/create-task-request.json#/properties/extra</span>
+        <span class="pl-v">Extra</span> json.<span class="pl-smi">RawMessage</span> <span class="pl-s"><span class="pl-pds">`</span>json:"extra"<span class="pl-pds">`</span></span>
+
         <span class="pl-c">// Required task metadata</span>
+        <span class="pl-c">//</span>
+        <span class="pl-c">// See http://schemas.taskcluster.net/queue/v1/create-task-request.json#/properties/metadata</span>
         <span class="pl-v">Metadata</span> <span class="pl-k">struct</span> {
+
             <span class="pl-c">// Human readable description of the task, please **explain** what the</span>
             <span class="pl-c">// task does. A few lines of documentation is not going to hurt you.</span>
+            <span class="pl-c">//</span>
+            <span class="pl-c">// Max length: 32768</span>
+            <span class="pl-c">//</span>
+            <span class="pl-c">// See http://schemas.taskcluster.net/queue/v1/create-task-request.json#/properties/metadata/properties/description</span>
             Description <span class="pl-k">string</span> <span class="pl-s"><span class="pl-pds">`</span>json:"description"<span class="pl-pds">`</span></span>
+
             <span class="pl-c">// Human readable name of task, used to very briefly given an idea about</span>
             <span class="pl-c">// what the task does.</span>
+            <span class="pl-c">//</span>
+            <span class="pl-c">// Max length: 255</span>
+            <span class="pl-c">//</span>
+            <span class="pl-c">// See http://schemas.taskcluster.net/queue/v1/create-task-request.json#/properties/metadata/properties/name</span>
             Name <span class="pl-k">string</span> <span class="pl-s"><span class="pl-pds">`</span>json:"name"<span class="pl-pds">`</span></span>
+
             <span class="pl-c">// E-mail of person who caused this task, e.g. the person who did</span>
             <span class="pl-c">// `hg push`. The person we should contact to ask why this task is here.</span>
+            <span class="pl-c">//</span>
+            <span class="pl-c">// Max length: 255</span>
+            <span class="pl-c">//</span>
+            <span class="pl-c">// See http://schemas.taskcluster.net/queue/v1/create-task-request.json#/properties/metadata/properties/owner</span>
             Owner <span class="pl-k">string</span> <span class="pl-s"><span class="pl-pds">`</span>json:"owner"<span class="pl-pds">`</span></span>
+
             <span class="pl-c">// Link to source of this task, should specify a file, revision and</span>
             <span class="pl-c">// repository. This should be place someone can go an do a git/hg blame</span>
             <span class="pl-c">// to who came up with recipe for this task.</span>
+            <span class="pl-c">//</span>
+            <span class="pl-c">// Max length: 4096</span>
+            <span class="pl-c">//</span>
+            <span class="pl-c">// See http://schemas.taskcluster.net/queue/v1/create-task-request.json#/properties/metadata/properties/source</span>
             Source <span class="pl-k">string</span> <span class="pl-s"><span class="pl-pds">`</span>json:"source"<span class="pl-pds">`</span></span>
         } <span class="pl-s"><span class="pl-pds">`</span>json:"metadata"<span class="pl-pds">`</span></span>
+
         <span class="pl-c">// Task-specific payload following worker-specific format. For example the</span>
         <span class="pl-c">// `docker-worker` requires keys like: `image`, `commands` and</span>
         <span class="pl-c">// `features`. Refer to the documentation of `docker-worker` for details.</span>
-        <span class="pl-v">Payload</span> <span class="pl-k">interface</span>{} <span class="pl-s"><span class="pl-pds">`</span>json:"payload"<span class="pl-pds">`</span></span>
+        <span class="pl-c">//</span>
+        <span class="pl-c">// See http://schemas.taskcluster.net/queue/v1/create-task-request.json#/properties/payload</span>
+        <span class="pl-v">Payload</span> json.<span class="pl-smi">RawMessage</span> <span class="pl-s"><span class="pl-pds">`</span>json:"payload"<span class="pl-pds">`</span></span>
+
+        <span class="pl-c">// Priority of task, this defaults to `normal`. Additional levels may be</span>
+        <span class="pl-c">// added later.</span>
+        <span class="pl-c">// **Task submitter required scopes** `queue:task-priority:high` for high</span>
+        <span class="pl-c">// priority tasks.</span>
+        <span class="pl-c">//</span>
+        <span class="pl-c">// Possible values:</span>
+        <span class="pl-c">//   * "high"</span>
+        <span class="pl-c">//   * "normal"</span>
+        <span class="pl-c">//</span>
+        <span class="pl-c">// Default:    "normal"</span>
+        <span class="pl-c">//</span>
+        <span class="pl-c">// See http://schemas.taskcluster.net/queue/v1/create-task-request.json#/properties/priority</span>
+        <span class="pl-v">Priority</span> <span class="pl-k">string</span> <span class="pl-s"><span class="pl-pds">`</span>json:"priority"<span class="pl-pds">`</span></span>
+
         <span class="pl-c">// Unique identifier for a provisioner, that can supply specified</span>
         <span class="pl-c">// `workerType`</span>
+        <span class="pl-c">//</span>
+        <span class="pl-c">// Syntax:     ^([a-zA-Z0-9-_]*)$</span>
+        <span class="pl-c">// Min length: 1</span>
+        <span class="pl-c">// Max length: 22</span>
+        <span class="pl-c">//</span>
+        <span class="pl-c">// See http://schemas.taskcluster.net/queue/v1/create-task-request.json#/properties/provisionerId</span>
         <span class="pl-v">ProvisionerId</span> <span class="pl-k">string</span> <span class="pl-s"><span class="pl-pds">`</span>json:"provisionerId"<span class="pl-pds">`</span></span>
+
         <span class="pl-c">// Number of times to retry the task in case of infrastructure issues.</span>
         <span class="pl-c">// An _infrastructure issue_ is a worker node that crashes or is shutdown,</span>
         <span class="pl-c">// these events are to be expected.</span>
+        <span class="pl-c">//</span>
+        <span class="pl-c">// Default:    5</span>
+        <span class="pl-c">// Mininum:    0</span>
+        <span class="pl-c">// Maximum:    49</span>
+        <span class="pl-c">//</span>
+        <span class="pl-c">// See http://schemas.taskcluster.net/queue/v1/create-task-request.json#/properties/retries</span>
         <span class="pl-v">Retries</span> <span class="pl-k">int</span> <span class="pl-s"><span class="pl-pds">`</span>json:"retries"<span class="pl-pds">`</span></span>
+
         <span class="pl-c">// List of task specific routes, AMQP messages will be CC'ed to these routes.</span>
+        <span class="pl-c">// **Task submitter required scopes** `queue:route:&lt;route&gt;` for</span>
+        <span class="pl-c">// each route given.</span>
+        <span class="pl-c">//</span>
+        <span class="pl-c">// Default:    []</span>
+        <span class="pl-c">//</span>
+        <span class="pl-c">// See http://schemas.taskcluster.net/queue/v1/create-task-request.json#/properties/routes</span>
         <span class="pl-v">Routes</span> []<span class="pl-k">string</span> <span class="pl-s"><span class="pl-pds">`</span>json:"routes"<span class="pl-pds">`</span></span>
+
         <span class="pl-c">// Identifier for the scheduler that _defined_ this task, this can be an</span>
         <span class="pl-c">// identifier for a user or a service like the `"task-graph-scheduler"`.</span>
-        <span class="pl-c">// Along with the `taskGroupId` this is used to form the permission scope</span>
-        <span class="pl-c">// `queue:assume:scheduler-id:&lt;schedulerId&gt;/&lt;taskGroupId&gt;`,</span>
-        <span class="pl-c">// this scope is necessary to _schedule_ a defined task, or _rerun_ a task.</span>
+        <span class="pl-c">// **Task submitter required scopes**</span>
+        <span class="pl-c">// `queue:assume:scheduler-id:&lt;schedulerId&gt;/&lt;taskGroupId&gt;`.</span>
+        <span class="pl-c">// This scope is also necessary to _schedule_ a defined task, or _rerun_ a</span>
+        <span class="pl-c">// task.</span>
+        <span class="pl-c">//</span>
+        <span class="pl-c">// Default:    "-"</span>
+        <span class="pl-c">// Syntax:     ^([a-zA-Z0-9-_]*)$</span>
+        <span class="pl-c">// Min length: 1</span>
+        <span class="pl-c">// Max length: 22</span>
+        <span class="pl-c">//</span>
+        <span class="pl-c">// See http://schemas.taskcluster.net/queue/v1/create-task-request.json#/properties/schedulerId</span>
         <span class="pl-v">SchedulerId</span> <span class="pl-k">string</span> <span class="pl-s"><span class="pl-pds">`</span>json:"schedulerId"<span class="pl-pds">`</span></span>
+
         <span class="pl-c">// List of scopes (or scope-patterns) that the task is</span>
         <span class="pl-c">// authorized to use.</span>
+        <span class="pl-c">//</span>
+        <span class="pl-c">// Default:    []</span>
+        <span class="pl-c">//</span>
+        <span class="pl-c">// See http://schemas.taskcluster.net/queue/v1/create-task-request.json#/properties/scopes</span>
         <span class="pl-v">Scopes</span> []<span class="pl-k">string</span> <span class="pl-s"><span class="pl-pds">`</span>json:"scopes"<span class="pl-pds">`</span></span>
+
         <span class="pl-c">// Arbitrary key-value tags (only strings limited to 4k). These can be used</span>
         <span class="pl-c">// to attach informal meta-data to a task. Use this for informal tags that</span>
         <span class="pl-c">// tasks can be classified by. You can also think of strings here as</span>
         <span class="pl-c">// candidates for formal meta-data. Something like</span>
         <span class="pl-c">// `purpose: 'build' || 'test'` is a good example.</span>
-        <span class="pl-v">Tags</span> <span class="pl-k">interface</span>{} <span class="pl-s"><span class="pl-pds">`</span>json:"tags"<span class="pl-pds">`</span></span>
+        <span class="pl-c">//</span>
+        <span class="pl-c">// Default:    map[]</span>
+        <span class="pl-c">//</span>
+        <span class="pl-c">// See http://schemas.taskcluster.net/queue/v1/create-task-request.json#/properties/tags</span>
+        <span class="pl-v">Tags</span> json.<span class="pl-smi">RawMessage</span> <span class="pl-s"><span class="pl-pds">`</span>json:"tags"<span class="pl-pds">`</span></span>
+
         <span class="pl-c">// Identifier for a group of tasks scheduled together with this task, by</span>
         <span class="pl-c">// scheduler identified by `schedulerId`. For tasks scheduled by the</span>
         <span class="pl-c">// task-graph scheduler, this is the `taskGraphId`.  Defaults to `taskId` if</span>
         <span class="pl-c">// property isn't specified.</span>
+        <span class="pl-c">//</span>
+        <span class="pl-c">// Syntax:     ^[A-Za-z0-9_-]{8}[Q-T][A-Za-z0-9_-][CGKOSWaeimquy26-][A-Za-z0-9_-]{10}[AQgw]$</span>
+        <span class="pl-c">//</span>
+        <span class="pl-c">// See http://schemas.taskcluster.net/queue/v1/create-task-request.json#/properties/taskGroupId</span>
         <span class="pl-v">TaskGroupId</span> <span class="pl-k">string</span> <span class="pl-s"><span class="pl-pds">`</span>json:"taskGroupId"<span class="pl-pds">`</span></span>
+
         <span class="pl-c">// Unique identifier for a worker-type within a specific provisioner</span>
+        <span class="pl-c">//</span>
+        <span class="pl-c">// Syntax:     ^([a-zA-Z0-9-_]*)$</span>
+        <span class="pl-c">// Min length: 1</span>
+        <span class="pl-c">// Max length: 22</span>
+        <span class="pl-c">//</span>
+        <span class="pl-c">// See http://schemas.taskcluster.net/queue/v1/create-task-request.json#/properties/workerType</span>
         <span class="pl-v">WorkerType</span> <span class="pl-k">string</span> <span class="pl-s"><span class="pl-pds">`</span>json:"workerType"<span class="pl-pds">`</span></span>
     }
-)</pre></div>
+)
+</pre></div>
 
-<p>Now you can unmarshal your json data into &amp;TaskDefinition{} and you are done!</p>
+<p>Now you can unmarshal your json data into <code>new(TaskDefinitionRequest)</code> and you are done!</p>
 
 <h1>
-<a id="installation" class="anchor" href="#installation" aria-hidden="true"><span class="octicon octicon-link"></span></a>Installation</h1>
+<a id="installation" class="anchor" href="#installation" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Installation</h1>
 
 <pre><code>go get github.com/taskcluster/jsonschema2go
 </code></pre>
 
 <h1>
-<a id="usage" class="anchor" href="#usage" aria-hidden="true"><span class="octicon octicon-link"></span></a>Usage</h1>
+<a id="usage" class="anchor" href="#usage" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Usage</h1>
 
 <h2>
-<a id="using-with-go-generate" class="anchor" href="#using-with-go-generate" aria-hidden="true"><span class="octicon octicon-link"></span></a>Using with go generate</h2>
+<a id="using-with-go-generate" class="anchor" href="#using-with-go-generate" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Using with go generate</h2>
 
 <p>To use directly with go generate: include a line like this as a comment in one of your source files:</p>
 
-<div class="highlight highlight-go"><pre><span class="pl-c">//go:generate jsonschema2go -u http://schemas.taskcluster.net/queue/v1/create-task-request.json -o autogeneratedtypes.go</span></pre></div>
+<div class="highlight highlight-source-go"><pre><span class="pl-c">//go:generate jsonschema2go -u http://schemas.taskcluster.net/queue/v1/create-task-request.json -o main</span></pre></div>
 
 <p>Please note there is no space between <code>//</code> and <code>go:generate</code>.</p>
 
@@ -327,34 +447,38 @@ go install
 </code></pre>
 
 <h2>
-<a id="running-as-a-standalone-command" class="anchor" href="#running-as-a-standalone-command" aria-hidden="true"><span class="octicon octicon-link"></span></a>Running as a standalone command</h2>
+<a id="running-as-a-standalone-command" class="anchor" href="#running-as-a-standalone-command" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Running as a standalone command</h2>
 
 <p>Run with -h to see the full options. Normally you would pipe a list of urls to jsonschema2go, e.g.:</p>
 
-<pre><code>$ cat urls.txt | jsonschema2go -o mygeneratedcode.go
+<pre><code>$ cat urls.txt | jsonschema2go -o mypackagename
 </code></pre>
 
 <h2>
-<a id="using-from-go-as-a-library" class="anchor" href="#using-from-go-as-a-library" aria-hidden="true"><span class="octicon octicon-link"></span></a>Using from go, as a library</h2>
+<a id="using-from-go-as-a-library" class="anchor" href="#using-from-go-as-a-library" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Using from go, as a library</h2>
 
-<div class="highlight highlight-go"><pre><span class="pl-k">package</span> main
+<div class="highlight highlight-source-go"><pre><span class="pl-k">package</span> main
 
 <span class="pl-k">import</span> (
-  <span class="pl-s"><span class="pl-pds">"</span>fmt<span class="pl-pds">"</span></span>
-  <span class="pl-s"><span class="pl-pds">"</span>github.com/taskcluster/jsonschema2go/jsonschema2go<span class="pl-pds">"</span></span>
+    <span class="pl-s"><span class="pl-pds">"</span>io/ioutil<span class="pl-pds">"</span></span>
+    <span class="pl-s"><span class="pl-pds">"</span>log<span class="pl-pds">"</span></span>
+
+    <span class="pl-s"><span class="pl-pds">"</span>github.com/taskcluster/jsonschema2go<span class="pl-pds">"</span></span>
 )
 
 <span class="pl-k">func</span> <span class="pl-en">main</span>() {
-  <span class="pl-smi">err</span> <span class="pl-k">:=</span> jsonschema2go.<span class="pl-c1">URLsToFile</span>(<span class="pl-s"><span class="pl-pds">"</span>output.go<span class="pl-pds">"</span></span>, <span class="pl-s"><span class="pl-pds">"</span>http://foo.com/schema1<span class="pl-pds">"</span></span>, <span class="pl-s"><span class="pl-pds">"</span>http://foo.com/schema2<span class="pl-pds">"</span></span>, ...)
-  <span class="pl-k">if</span> err != <span class="pl-c1">nil</span> {
-    fmt.<span class="pl-c1">Println</span>(<span class="pl-s"><span class="pl-pds">"</span>Whoops, something went wrong...<span class="pl-pds">"</span></span>)
-    <span class="pl-c1">panic</span>(err)
-  }
-  fmt.<span class="pl-c1">Println</span>(<span class="pl-s"><span class="pl-pds">"</span>Yay, it worked.<span class="pl-pds">"</span></span>)
+    <span class="pl-smi">sourceCode</span>, <span class="pl-smi">_</span>, <span class="pl-smi">err</span> <span class="pl-k">:=</span> jsonschema2go.<span class="pl-c1">Generate</span>(<span class="pl-s"><span class="pl-pds">"</span>packageName<span class="pl-pds">"</span></span>, <span class="pl-s"><span class="pl-pds">"</span>url1<span class="pl-pds">"</span></span>, <span class="pl-s"><span class="pl-pds">"</span>url2<span class="pl-pds">"</span></span>, <span class="pl-s"><span class="pl-pds">"</span>url3<span class="pl-pds">"</span></span>)
+    <span class="pl-k">if</span> err != <span class="pl-c1">nil</span> {
+        log.<span class="pl-c1">Fatalf</span>(<span class="pl-s"><span class="pl-pds">"</span>Could not generate go types from given json schemas...<span class="pl-pds">"</span></span>, err)
+    }
+    err = ioutil.<span class="pl-c1">WriteFile</span>(<span class="pl-s"><span class="pl-pds">"</span>generatedcode.go<span class="pl-pds">"</span></span>, sourceCode, <span class="pl-c1">0644</span>)
+    <span class="pl-k">if</span> err != <span class="pl-c1">nil</span> {
+        log.<span class="pl-c1">Fatalf</span>(<span class="pl-s"><span class="pl-pds">"</span>Could not write source code to file system...<span class="pl-pds">"</span></span>, err)
+    }
 }</pre></div>
 
 <h1>
-<a id="contributing" class="anchor" href="#contributing" aria-hidden="true"><span class="octicon octicon-link"></span></a>Contributing</h1>
+<a id="contributing" class="anchor" href="#contributing" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Contributing</h1>
 
 <p>Contributions welcome, feel free to contact me as pmoore on irc.mozilla.org, or send me a pull request.</p>
 
