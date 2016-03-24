@@ -47,7 +47,7 @@
 
 <p>First, let's see the schema:</p>
 
-<pre><code>$ curl 'http://schemas.taskcluster.net/queue/v1/create-task-request.json' 2&gt;/dev/null
+<pre><code>$ curl 'http://schemas.taskcluster.net/queue/v1/create-task-request.json'
 {
     "$schema": "http://json-schema.org/draft-04/schema#",
     "title": "Task Definition Request",
@@ -84,6 +84,30 @@
             "description": "Identifier for a group of tasks scheduled together with this task, by\nscheduler identified by `schedulerId`. For tasks scheduled by the\ntask-graph scheduler, this is the `taskGraphId`.  Defaults to `taskId` if\nproperty isn't specified.\n",
             "type": "string",
             "pattern": "^[A-Za-z0-9_-]{8}[Q-T][A-Za-z0-9_-][CGKOSWaeimquy26-][A-Za-z0-9_-]{10}[AQgw]$"
+        },
+        "dependencies": {
+            "title": "Task Dependencies",
+            "description": "List of dependent tasks. These must either be _completed_ or _resolved_\nbefore this task is scheduled. See `requires` for semantics.\n",
+            "type": "array",
+            "default": [],
+            "items": {
+                "title": "Task Dependency",
+                "description": "The `taskId` of a task that must be resolved before this task is\nscheduled.\n",
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{8}[Q-T][A-Za-z0-9_-][CGKOSWaeimquy26-][A-Za-z0-9_-]{10}[AQgw]$"
+            },
+            "maxItems": 100,
+            "uniqueItems": true
+        },
+        "requires": {
+            "title": "Dependency Requirement Semantics",
+            "description": "The tasks relation to its dependencies. This property specifies the\nsemantics of the `task.dependencies` property.\nIf `all-completed` is given the task will be scheduled when all\ndependencies are resolved _completed_ (successful resolution).\nIf `all-resolved` is given the task will be scheduled when all dependencies\nhave been resolved, regardless of what their resolution is.\n",
+            "type": "string",
+            "enum": [
+                "all-completed",
+                "all-resolved"
+            ],
+            "default": "all-completed"
         },
         "routes": {
             "title": "Task Specific Routes",
@@ -251,13 +275,21 @@
         <span class="pl-c">// See http://schemas.taskcluster.net/queue/v1/create-task-request.json#/properties/deadline</span>
         <span class="pl-v">Deadline</span> tcclient.<span class="pl-smi">Time</span> <span class="pl-s"><span class="pl-pds">`</span>json:"deadline"<span class="pl-pds">`</span></span>
 
+        <span class="pl-c">// List of dependent tasks. These must either be _completed_ or _resolved_</span>
+        <span class="pl-c">// before this task is scheduled. See `requires` for semantics.</span>
+        <span class="pl-c">//</span>
+        <span class="pl-c">// Default:    []</span>
+        <span class="pl-c">//</span>
+        <span class="pl-c">// See http://schemas.taskcluster.net/queue/v1/create-task-request.json#/properties/dependencies</span>
+        <span class="pl-v">Dependencies</span> []<span class="pl-k">string</span> <span class="pl-s"><span class="pl-pds">`</span>json:"dependencies,omitempty"<span class="pl-pds">`</span></span>
+
         <span class="pl-c">// Task expiration, time at which task definition and status is deleted.</span>
         <span class="pl-c">// Notice that all artifacts for the must have an expiration that is no</span>
         <span class="pl-c">// later than this. If this property isn't it will be set to `deadline`</span>
         <span class="pl-c">// plus one year (this default may subject to change).</span>
         <span class="pl-c">//</span>
         <span class="pl-c">// See http://schemas.taskcluster.net/queue/v1/create-task-request.json#/properties/expires</span>
-        <span class="pl-v">Expires</span> tcclient.<span class="pl-smi">Time</span> <span class="pl-s"><span class="pl-pds">`</span>json:"expires"<span class="pl-pds">`</span></span>
+        <span class="pl-v">Expires</span> tcclient.<span class="pl-smi">Time</span> <span class="pl-s"><span class="pl-pds">`</span>json:"expires,omitempty"<span class="pl-pds">`</span></span>
 
         <span class="pl-c">// Object with properties that can hold any kind of extra data that should be</span>
         <span class="pl-c">// associated with the task. This can be data for the task which doesn't</span>
@@ -272,7 +304,7 @@
         <span class="pl-c">// Default:    map[]</span>
         <span class="pl-c">//</span>
         <span class="pl-c">// See http://schemas.taskcluster.net/queue/v1/create-task-request.json#/properties/extra</span>
-        <span class="pl-v">Extra</span> json.<span class="pl-smi">RawMessage</span> <span class="pl-s"><span class="pl-pds">`</span>json:"extra"<span class="pl-pds">`</span></span>
+        <span class="pl-v">Extra</span> json.<span class="pl-smi">RawMessage</span> <span class="pl-s"><span class="pl-pds">`</span>json:"extra,omitempty"<span class="pl-pds">`</span></span>
 
         <span class="pl-c">// Required task metadata</span>
         <span class="pl-c">//</span>
@@ -332,7 +364,7 @@
         <span class="pl-c">// Default:    "normal"</span>
         <span class="pl-c">//</span>
         <span class="pl-c">// See http://schemas.taskcluster.net/queue/v1/create-task-request.json#/properties/priority</span>
-        <span class="pl-v">Priority</span> <span class="pl-k">string</span> <span class="pl-s"><span class="pl-pds">`</span>json:"priority"<span class="pl-pds">`</span></span>
+        <span class="pl-v">Priority</span> <span class="pl-k">string</span> <span class="pl-s"><span class="pl-pds">`</span>json:"priority,omitempty"<span class="pl-pds">`</span></span>
 
         <span class="pl-c">// Unique identifier for a provisioner, that can supply specified</span>
         <span class="pl-c">// `workerType`</span>
@@ -342,7 +374,23 @@
         <span class="pl-c">// Max length: 22</span>
         <span class="pl-c">//</span>
         <span class="pl-c">// See http://schemas.taskcluster.net/queue/v1/create-task-request.json#/properties/provisionerId</span>
-        <span class="pl-v">ProvisionerId</span> <span class="pl-k">string</span> <span class="pl-s"><span class="pl-pds">`</span>json:"provisionerId"<span class="pl-pds">`</span></span>
+        <span class="pl-v">ProvisionerID</span> <span class="pl-k">string</span> <span class="pl-s"><span class="pl-pds">`</span>json:"provisionerId"<span class="pl-pds">`</span></span>
+
+        <span class="pl-c">// The tasks relation to its dependencies. This property specifies the</span>
+        <span class="pl-c">// semantics of the `task.dependencies` property.</span>
+        <span class="pl-c">// If `all-completed` is given the task will be scheduled when all</span>
+        <span class="pl-c">// dependencies are resolved _completed_ (successful resolution).</span>
+        <span class="pl-c">// If `all-resolved` is given the task will be scheduled when all dependencies</span>
+        <span class="pl-c">// have been resolved, regardless of what their resolution is.</span>
+        <span class="pl-c">//</span>
+        <span class="pl-c">// Possible values:</span>
+        <span class="pl-c">//   * "all-completed"</span>
+        <span class="pl-c">//   * "all-resolved"</span>
+        <span class="pl-c">//</span>
+        <span class="pl-c">// Default:    "all-completed"</span>
+        <span class="pl-c">//</span>
+        <span class="pl-c">// See http://schemas.taskcluster.net/queue/v1/create-task-request.json#/properties/requires</span>
+        <span class="pl-v">Requires</span> <span class="pl-k">string</span> <span class="pl-s"><span class="pl-pds">`</span>json:"requires,omitempty"<span class="pl-pds">`</span></span>
 
         <span class="pl-c">// Number of times to retry the task in case of infrastructure issues.</span>
         <span class="pl-c">// An _infrastructure issue_ is a worker node that crashes or is shutdown,</span>
@@ -353,7 +401,7 @@
         <span class="pl-c">// Maximum:    49</span>
         <span class="pl-c">//</span>
         <span class="pl-c">// See http://schemas.taskcluster.net/queue/v1/create-task-request.json#/properties/retries</span>
-        <span class="pl-v">Retries</span> <span class="pl-k">int</span> <span class="pl-s"><span class="pl-pds">`</span>json:"retries"<span class="pl-pds">`</span></span>
+        <span class="pl-v">Retries</span> <span class="pl-k">int</span> <span class="pl-s"><span class="pl-pds">`</span>json:"retries,omitempty"<span class="pl-pds">`</span></span>
 
         <span class="pl-c">// List of task specific routes, AMQP messages will be CC'ed to these routes.</span>
         <span class="pl-c">// **Task submitter required scopes** `queue:route:&lt;route&gt;` for</span>
@@ -362,7 +410,7 @@
         <span class="pl-c">// Default:    []</span>
         <span class="pl-c">//</span>
         <span class="pl-c">// See http://schemas.taskcluster.net/queue/v1/create-task-request.json#/properties/routes</span>
-        <span class="pl-v">Routes</span> []<span class="pl-k">string</span> <span class="pl-s"><span class="pl-pds">`</span>json:"routes"<span class="pl-pds">`</span></span>
+        <span class="pl-v">Routes</span> []<span class="pl-k">string</span> <span class="pl-s"><span class="pl-pds">`</span>json:"routes,omitempty"<span class="pl-pds">`</span></span>
 
         <span class="pl-c">// Identifier for the scheduler that _defined_ this task, this can be an</span>
         <span class="pl-c">// identifier for a user or a service like the `"task-graph-scheduler"`.</span>
@@ -377,7 +425,7 @@
         <span class="pl-c">// Max length: 22</span>
         <span class="pl-c">//</span>
         <span class="pl-c">// See http://schemas.taskcluster.net/queue/v1/create-task-request.json#/properties/schedulerId</span>
-        <span class="pl-v">SchedulerId</span> <span class="pl-k">string</span> <span class="pl-s"><span class="pl-pds">`</span>json:"schedulerId"<span class="pl-pds">`</span></span>
+        <span class="pl-v">SchedulerID</span> <span class="pl-k">string</span> <span class="pl-s"><span class="pl-pds">`</span>json:"schedulerId,omitempty"<span class="pl-pds">`</span></span>
 
         <span class="pl-c">// List of scopes (or scope-patterns) that the task is</span>
         <span class="pl-c">// authorized to use.</span>
@@ -385,7 +433,7 @@
         <span class="pl-c">// Default:    []</span>
         <span class="pl-c">//</span>
         <span class="pl-c">// See http://schemas.taskcluster.net/queue/v1/create-task-request.json#/properties/scopes</span>
-        <span class="pl-v">Scopes</span> []<span class="pl-k">string</span> <span class="pl-s"><span class="pl-pds">`</span>json:"scopes"<span class="pl-pds">`</span></span>
+        <span class="pl-v">Scopes</span> []<span class="pl-k">string</span> <span class="pl-s"><span class="pl-pds">`</span>json:"scopes,omitempty"<span class="pl-pds">`</span></span>
 
         <span class="pl-c">// Arbitrary key-value tags (only strings limited to 4k). These can be used</span>
         <span class="pl-c">// to attach informal meta-data to a task. Use this for informal tags that</span>
@@ -396,7 +444,7 @@
         <span class="pl-c">// Default:    map[]</span>
         <span class="pl-c">//</span>
         <span class="pl-c">// See http://schemas.taskcluster.net/queue/v1/create-task-request.json#/properties/tags</span>
-        <span class="pl-v">Tags</span> json.<span class="pl-smi">RawMessage</span> <span class="pl-s"><span class="pl-pds">`</span>json:"tags"<span class="pl-pds">`</span></span>
+        <span class="pl-v">Tags</span> json.<span class="pl-smi">RawMessage</span> <span class="pl-s"><span class="pl-pds">`</span>json:"tags,omitempty"<span class="pl-pds">`</span></span>
 
         <span class="pl-c">// Identifier for a group of tasks scheduled together with this task, by</span>
         <span class="pl-c">// scheduler identified by `schedulerId`. For tasks scheduled by the</span>
@@ -406,7 +454,7 @@
         <span class="pl-c">// Syntax:     ^[A-Za-z0-9_-]{8}[Q-T][A-Za-z0-9_-][CGKOSWaeimquy26-][A-Za-z0-9_-]{10}[AQgw]$</span>
         <span class="pl-c">//</span>
         <span class="pl-c">// See http://schemas.taskcluster.net/queue/v1/create-task-request.json#/properties/taskGroupId</span>
-        <span class="pl-v">TaskGroupId</span> <span class="pl-k">string</span> <span class="pl-s"><span class="pl-pds">`</span>json:"taskGroupId"<span class="pl-pds">`</span></span>
+        <span class="pl-v">TaskGroupID</span> <span class="pl-k">string</span> <span class="pl-s"><span class="pl-pds">`</span>json:"taskGroupId,omitempty"<span class="pl-pds">`</span></span>
 
         <span class="pl-c">// Unique identifier for a worker-type within a specific provisioner</span>
         <span class="pl-c">//</span>
@@ -421,6 +469,23 @@
 </pre></div>
 
 <p>Now you can unmarshal your json data into <code>new(TaskDefinitionRequest)</code> and you are done!</p>
+
+<h1>
+<a id="supported-url-schemes" class="anchor" href="#supported-url-schemes" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Supported URL schemes</h1>
+
+<p>Currently we support <code>http</code>, <code>https</code> and <code>file</code> URL schemes. It is recommended
+when using <code>file</code> scheme, that the URL is of the form
+<code>file://&lt;absolute_path_to_json_schema_file&gt;</code>.</p>
+
+<h1>
+<a id="supported-schema-formats" class="anchor" href="#supported-schema-formats" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Supported schema formats</h1>
+
+<p>Currently we support json schema documents in the following formats:</p>
+
+<ul>
+<li>json</li>
+<li>yaml</li>
+</ul>
 
 <h1>
 <a id="installation" class="anchor" href="#installation" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Installation</h1>
@@ -467,20 +532,47 @@ go install
 )
 
 <span class="pl-k">func</span> <span class="pl-en">main</span>() {
-    <span class="pl-smi">sourceCode</span>, <span class="pl-smi">_</span>, <span class="pl-smi">err</span> <span class="pl-k">:=</span> jsonschema2go.<span class="pl-c1">Generate</span>(<span class="pl-s"><span class="pl-pds">"</span>packageName<span class="pl-pds">"</span></span>, <span class="pl-s"><span class="pl-pds">"</span>url1<span class="pl-pds">"</span></span>, <span class="pl-s"><span class="pl-pds">"</span>url2<span class="pl-pds">"</span></span>, <span class="pl-s"><span class="pl-pds">"</span>url3<span class="pl-pds">"</span></span>)
+    <span class="pl-smi">job</span> <span class="pl-k">:=</span> &amp;jsonschema2go.<span class="pl-smi">Job</span>{
+        Package: <span class="pl-s"><span class="pl-pds">"</span>packageName<span class="pl-pds">"</span></span>,
+        URLs:    []<span class="pl-k">string</span>{
+            <span class="pl-s"><span class="pl-pds">"</span>url1<span class="pl-pds">"</span></span>,
+            <span class="pl-s"><span class="pl-pds">"</span>url2<span class="pl-pds">"</span></span>,
+            <span class="pl-s"><span class="pl-pds">"</span>url3<span class="pl-pds">"</span></span>,
+        },
+        ExportTypes: <span class="pl-c1">true</span>,
+    }
+    <span class="pl-smi">result</span>, <span class="pl-smi">err</span> <span class="pl-k">:=</span> job.<span class="pl-c1">Execute</span>()
     <span class="pl-k">if</span> err != <span class="pl-c1">nil</span> {
         log.<span class="pl-c1">Fatalf</span>(<span class="pl-s"><span class="pl-pds">"</span>Could not generate go types from given json schemas...<span class="pl-pds">"</span></span>, err)
     }
-    err = ioutil.<span class="pl-c1">WriteFile</span>(<span class="pl-s"><span class="pl-pds">"</span>generatedcode.go<span class="pl-pds">"</span></span>, sourceCode, <span class="pl-c1">0644</span>)
+    err = ioutil.<span class="pl-c1">WriteFile</span>(<span class="pl-s"><span class="pl-pds">"</span>generatedcode.go<span class="pl-pds">"</span></span>, result.<span class="pl-smi">SourceCode</span>, <span class="pl-c1">0644</span>)
     <span class="pl-k">if</span> err != <span class="pl-c1">nil</span> {
         log.<span class="pl-c1">Fatalf</span>(<span class="pl-s"><span class="pl-pds">"</span>Could not write source code to file system...<span class="pl-pds">"</span></span>, err)
     }
 }</pre></div>
 
 <h1>
+<a id="todo" class="anchor" href="#todo" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>TODO</h1>
+
+<ul>
+<li>[ ] Properly document all exported types for better go docs</li>
+<li>[ ] Handle <code>$ref</code> references that start with <code>#</code> character</li>
+<li>[ ] Handle definition sections</li>
+<li>[ ] Test cases</li>
+<li>[ ] Coverage reporting</li>
+<li>[ ] Validate json with json schema, and handle failures gracefully (no panics)</li>
+<li>[ ] Option to create pointer references in generated types rather than values, or a mechanism to have fine control of this</li>
+<li>[ ] Option to no create non-embedded structs, i.e. embedded structs get moved to top level types</li>
+<li>[ ] Create ability to map given types to custom types (e.g. timestamps -&gt; <code>tcclient.Time</code>)</li>
+<li>[ ] Remove hard references to <code>tcclient.Time</code>
+</li>
+<li>[ ] Add support for auto-generated validation function(s) that respect the json schema constraints</li>
+</ul>
+
+<h1>
 <a id="contributing" class="anchor" href="#contributing" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Contributing</h1>
 
-<p>Contributions welcome, feel free to contact me as pmoore on irc.mozilla.org, or send me a pull request.</p>
+<p>Contributions welcome, feel free to contact #taskcluster on irc.mozilla.org, or send a pull request.</p>
 
       <footer class="site-footer">
         <span class="site-footer-owner"><a href="https://github.com/taskcluster/jsonschema2go">Jsonschema2go</a> is maintained by <a href="https://github.com/taskcluster">taskcluster</a>.</span>
