@@ -4,10 +4,14 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"go/format"
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
 	"strings"
+
+	"golang.org/x/tools/imports"
 
 	docopt "github.com/docopt/docopt-go"
 	"github.com/taskcluster/jsonschema2go"
@@ -42,7 +46,7 @@ func parseStandardIn() ([]string, error) {
 }
 
 var (
-	version = "jsonschema2go 1.1.0"
+	version = "jsonschema2go 2.0.0"
 	usage   = `
 jsonschema2go
 jsonschema2go generates go source code from json schema inputs. Specifically,
@@ -58,15 +62,14 @@ The go type names will be "normalised" from the json subschema Title element.
 
 Examples:
   cat urls.txt | jsonschema2go --out cli.go -o main
-  jsonschema2go --in "https://.../url1 file:///Users/pmoore/myschema.yml" --build '!windows' -o monkey
+  jsonschema2go --in "https://.../url1 file:///Users/pmoore/myschema.yml" --build '!windows' -- monkey
 
 Usage:
-  jsonschema2go [--in INPUT-URLS] [--out OUTPUT-FILE] [--build BUILD-DIRECTIVES] -o GO-PACKAGE-NAME
+  jsonschema2go [--in INPUT-URLS] [--out OUTPUT-FILE] [--build BUILD-DIRECTIVES] [--] GO-PACKAGE-NAME
   jsonschema2go -h|--help
   jsonschema2go --version
 
 Options:
-
 --in INPUT-URLS            A list of URLs to input. If not provided, the urls
                            will be read from standard in.
 --out OUTPUT-FILE          The file to write the generated code to. The file
@@ -76,7 +79,6 @@ Options:
 --build BUILD-DIRECTIVES   If build directives are specified, the generated
                            code will begin with the line:
                            '// +build <BUILD-DIRECTIVES>'
--o GO-PACKAGE-NAME         The package name to use in the generated file.
 -h --help                  Display this help text.
 --version                  Display the version information of jsonschema2go.
 `
@@ -110,13 +112,31 @@ func main() {
 		result.SourceCode = append([]byte("// +build "+directives.(string)+"\n"), result.SourceCode...)
 	}
 	if out := arguments["OUTPUT-FILE"]; out != nil {
-		f, err := os.Create(out.(string))
+		err = formatSourceAndSave(out.(string), result.SourceCode)
 		if err != nil {
 			log.Fatalf("jsonschema2go: Could not create file '%v'", out)
 		}
-		defer f.Close()
-		f.Write(result.SourceCode)
 	} else {
 		fmt.Println(string(result.SourceCode))
 	}
+}
+
+func formatSourceAndSave(sourceFile string, sourceCode []byte) error {
+	// first run goimports to clean up unused imports
+	fixedImports, err := imports.Process(sourceFile, sourceCode, nil)
+	var formattedContent []byte
+	// only perform general format, if that worked...
+	if err == nil {
+		// now run a standard system format
+		formattedContent, err = format.Source(fixedImports)
+	}
+	// in case of formatting failure from either of the above formatting
+	// steps, let's keep the unformatted version so we can troubleshoot
+	// more easily...
+	if err != nil {
+		// no need to handle error as we exit below anyway
+		_ = ioutil.WriteFile(sourceFile, sourceCode, 0644)
+		return err
+	}
+	return ioutil.WriteFile(sourceFile, formattedContent, 0644)
 }

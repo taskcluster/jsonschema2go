@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strconv"
@@ -567,7 +568,12 @@ func (job *Job) loadJsonSchema(URL string) (subSchema *JsonSubSchema, err error)
 		}
 		body = resp.Body
 	case "file":
-		body, err = os.Open(u.Path)
+		abs := ""
+		abs, err = filepath.Abs(strings.Replace(strings.Replace(URL, "file://", "", 1), "#", "", 1))
+		if err != nil {
+			return
+		}
+		body, err = os.Open(abs)
 		if err != nil {
 			return
 		}
