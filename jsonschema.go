@@ -300,8 +300,7 @@ func (jsonSubSchema *JsonSubSchema) typeDefinition(topLevel bool, extraPackages 
 	case "string":
 		if f := jsonSubSchema.Format; f != nil {
 			if *f == "date-time" {
-				typ = "tcclient.Time"
-				extraPackages["tcclient \"github.com/taskcluster/taskcluster-client-go\""] = true
+				typ = "time.Time"
 			}
 		}
 	}
